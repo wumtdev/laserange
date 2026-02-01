@@ -1,0 +1,44 @@
+import { Slider, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Camera";
+    preferred-width: 900px;
+    preferred-height: 600px;
+
+    in-out property <image> camera-frame;
+    in-out property <image> target-frame;
+    in-out property <int> threshold: 127;
+    
+    callback threshold-changed(int);
+
+    HorizontalBox {
+        padding: 10px;
+
+        Image {
+            source: camera-frame;
+            image-fit: contain;
+        }
+
+        Image {
+            source: target-frame;
+            image-fit: contain;
+        }
+
+        VerticalBox {
+            width: 200px;
+            spacing: 10px;
+            
+            Text { text: "Threshold: " + threshold; }
+            
+            Slider {
+                minimum: 0;
+                maximum: 255;
+                value: threshold;
+                changed(val) => {
+                    threshold = val;
+                    root.threshold-changed(val);
+                }
+            }
+        }
+    }
+}
