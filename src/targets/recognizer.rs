@@ -48,25 +48,6 @@ pub fn start_target_recognizer(
             }
             processed_frame = Some(frame.clone());
 
-            // if let Some(laser_flash) = find_red_laser(&frame) {
-            //     println!("Laser: {:?}", laser_flash);
-            //     println!(
-            //         "Color: {:?}",
-            //         frame.get_pixel(laser_flash.x as u32, laser_flash.y as u32)
-            //     );
-            //     imageproc::drawing::draw_cross_mut(
-            //         &mut frame,
-            //         Rgb([0, 255, 0]),
-            //         laser_flash.x as i32,
-            //         laser_flash.y as i32,
-            //     );
-            //     imageproc::drawing::draw_hollow_rect_mut(
-            //         &mut frame,
-            //         Rect::at(laser_flash.x as i32 - 10, laser_flash.y as i32 - 10).of_size(20, 20),
-            //         Rgb([0, 255, 0]),
-            //     );
-            // }
-
             let gray = frame.image.convert();
             let edges = canny(&gray, 50.0, 100.0);
             let contours = imageproc::contours::find_contours::<u32>(&edges);

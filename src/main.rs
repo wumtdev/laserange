@@ -8,13 +8,19 @@ use tracing::info;
 
 use crate::{
     bus::Event,
+    capturer::CapturedFrame,
+    hits::detector::{HitDetectorCommand, start_hit_detector},
     recorder::Recorder,
-    targets::{TargetInfo, recognizer::start_target_recognizer},
+    targets::{
+        TargetInfo,
+        recognizer::{TargetRecognizerCommand, start_target_recognizer},
+    },
     vision::{frame::find_rectangle_vertices, laser::find_red_laser, project::unwarp_rectangle},
 };
 
 mod bus;
 mod capturer;
+mod hits;
 mod recorder;
 mod targets;
 mod vision;
@@ -23,33 +29,57 @@ fn main() {
     tracing_subscriber::fmt().init();
 
     let ui = MainWindow::new().unwrap();
-    let threshold = Arc::new(Mutex::new(127i32));
-
-    let threshold_clone = threshold.clone();
-    ui.on_threshold_changed(move |val| {
-        *threshold_clone.lock().unwrap() = val;
-    });
 
     let ui_weak = ui.as_weak();
 
     std::thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
         let target_info = Arc::new(RwLock::new(None));
+        let laser_info = Arc::new(RwLock::new(None));
         let recorder = Arc::new(Recorder::new());
-        let capturer_tx = crate::capturer::start_capturer(tx.clone());
+        let capturer = crate::capturer::start_capturer(tx.clone());
         let target_recognizer = start_target_recognizer(recorder.clone(), target_info.clone());
+        let hit_detector = start_hit_detector(tx.clone(), laser_info.clone());
 
         for event in rx.iter() {
             match event {
-                Event::NewFrame(frame) => {
+                Event::NewFrame(captured_frame) => {
                     // info!("Received new frame");
-                    recorder.push_frame(frame.clone());
+                    recorder.push_frame(captured_frame.clone());
 
-                    let mut frame = frame.image.clone();
+                    let mut frame = captured_frame.image.clone();
                     let mut target_frame = None;
 
                     if let Some(target_info) = &*target_info.read().unwrap() {
-                        target_frame = unwarp_rectangle(&frame, &target_info.rect, 600, 800);
+                        if let Some(mut frame) =
+                            unwarp_rectangle(&frame, &target_info.rect, 600, 800)
+                        {
+                            let captured_frame = Arc::new(CapturedFrame {
+                                image: frame.clone(),
+                                timestamp: captured_frame.timestamp,
+                            });
+                            hit_detector
+                                .send(HitDetectorCommand::NewFrame(captured_frame))
+                                .unwrap();
+                            if let Some(laser_info) = &*laser_info.read().unwrap() {
+                                imageproc::drawing::draw_cross_mut(
+                                    &mut frame,
+                                    Rgb([0, 255, 0]),
+                                    laser_info.pos.x as i32,
+                                    laser_info.pos.y as i32,
+                                );
+                                imageproc::drawing::draw_hollow_rect_mut(
+                                    &mut frame,
+                                    Rect::at(
+                                        laser_info.pos.x as i32 - 10,
+                                        laser_info.pos.y as i32 - 10,
+                                    )
+                                    .of_size(20, 20),
+                                    Rgb([0, 255, 0]),
+                                );
+                            }
+                            target_frame = Some(frame);
+                        }
                         imageproc::drawing::draw_hollow_polygon_mut(
                             &mut frame,
                             &target_info.rect,
