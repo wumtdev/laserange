@@ -39,7 +39,7 @@ fn main() {
         let recorder = Arc::new(Recorder::new());
         let capturer = crate::capturer::start_capturer(tx.clone());
         let target_recognizer = start_target_recognizer(recorder.clone(), target_info.clone());
-        let hit_detector = start_hit_detector(tx.clone(), laser_info.clone());
+        let hit_detector = start_hit_detector(tx.clone(), laser_info.clone(), recorder.clone());
 
         for event in rx.iter() {
             match event {
@@ -64,7 +64,7 @@ fn main() {
                             if let Some(laser_info) = &*laser_info.read().unwrap() {
                                 imageproc::drawing::draw_cross_mut(
                                     &mut frame,
-                                    Rgb([0, 255, 0]),
+                                    Rgb([255, 0, 0]),
                                     laser_info.pos.x as i32,
                                     laser_info.pos.y as i32,
                                 );
@@ -75,7 +75,7 @@ fn main() {
                                         laser_info.pos.y as i32 - 10,
                                     )
                                     .of_size(20, 20),
-                                    Rgb([0, 255, 0]),
+                                    Rgb([255, 0, 0]),
                                 );
                             }
                             target_frame = Some(frame);
