@@ -1,0 +1,54 @@
+export component CameraFeed inherits Rectangle {
+    in property <image> camera-frame;
+    
+    // Selection state
+    in-out property <bool> is-selecting: false;
+    in-out property <float> start-x: 0;
+    in-out property <float> start-y: 0;
+    in-out property <float> end-x: 1;
+    in-out property <float> end-y: 1;
+    
+    // Computed rectangle bounds
+    property <length> rect-x: min(start-x, end-x) * self.width;
+    property <length> rect-y: min(start-y, end-y) * self.height;
+    property <length> rect-width: abs(end-x - start-x) * self.width;
+    property <length> rect-height: abs(end-y - start-y) * self.height;
+
+    // Source image
+    Image {
+        source: root.camera-frame;
+        image-fit: contain;
+    }
+        
+    // Selection rectangle
+    if root.is-selecting || root.rect-width > 0px: Rectangle {
+        x: root.rect-x;
+        y: root.rect-y;
+        width: root.rect-width;
+        height: root.rect-height;
+        // background: #4080ff40; // Semi-transparent blue
+            border-color: #ffa200;
+        border-width: 2px;
+    }
+        
+    // Touch area for mouse interaction
+    TouchArea {
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.down {
+                root.is-selecting = true;
+                root.start-x = self.mouse-x / self.width;
+                root.start-y = self.mouse-y / self.height;
+                root.end-x = root.start-x;
+                root.end-y = root.start-y;
+            } else if event.kind == PointerEventKind.up {
+                root.is-selecting = false;
+            }
+        }
+        moved => {
+            if root.is-selecting {
+                root.end-x = clamp(self.mouse-x / self.width, 0, 1);
+                root.end-y = clamp(self.mouse-y / self.height, 0, 1);
+            }
+        }
+    }
+}

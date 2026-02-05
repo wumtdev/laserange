@@ -1,4 +1,12 @@
-import { Slider, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import {
+    Slider,
+    VerticalBox,
+    HorizontalBox,
+    GroupBox,
+} from "std-widgets.slint";
+import { CameraFeed } from "CameraFeed.slint";
+
+
 
 export component MainWindow inherits Window {
     title: "Camera";
@@ -7,17 +15,32 @@ export component MainWindow inherits Window {
 
     in-out property <image> camera-frame;
     in-out property <image> target-frame;
+    in property <bool> camera-zoom-supported;
 
     HorizontalBox {
         padding: 10px;
 
-        Image {
-            source: camera-frame;
-            image-fit: contain;
+        VerticalBox {
+
+            CameraFeed {
+                camera-frame: camera-frame;
+                vertical-stretch: 1;
+            }
+
+            GroupBox {
+                title: "Zoom";
+                vertical-stretch: 0;
+                Slider {
+                    minimum: 1;
+                    maximum: 20;
+                    value: 9;
+                    enabled: camera-zoom-supported;
+                }
+            }
         }
 
         Image {
-            source: target-frame;
+            source: camera-frame;
             image-fit: contain;
         }
     }
