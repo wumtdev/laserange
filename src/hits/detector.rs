@@ -1,4 +1,5 @@
 use std::{
+    path::Path,
     sync::{
         Arc, RwLock,
         mpsc::{self, Sender},
@@ -10,7 +11,7 @@ use image::RgbImage;
 use tracing::info;
 
 use crate::{
-    bus::Event, capturer::CapturedFrame, coding::ffmpeg::save_video_simple, hits::LaserInfo,
+    bus::Event, capturer::CapturedFrame, coding::ffmpeg::save_video, hits::LaserInfo,
     recorder::Recorder, vision::laser::find_red_laser,
 };
 
@@ -25,13 +26,13 @@ pub fn start_hit_detector(
 ) -> Sender<HitDetectorCommand> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut clip: Vec<Arc<CapturedFrame>> = Vec::with_capacity(20);
+        let mut clip: Vec<Arc<CapturedFrame>> = Vec::with_capacity(60);
         let mut recording = false;
         for msg in rx {
             match msg {
                 HitDetectorCommand::NewFrame(frame) => {
                     if let Some(laser_flash) = find_red_laser(&frame.image) {
-                        println!("Laser: {:?}", laser_flash);
+                        info!("Laser: {:?}", laser_flash);
                         if !recording {
                             *laser_info.write().unwrap() = Some(LaserInfo { pos: laser_flash });
                             clip = recorder.frames();
@@ -43,10 +44,14 @@ pub fn start_hit_detector(
                         if clip.len() > 3 {
                             let clip_path = "data/hello.mp4";
                             let v: Vec<_> = clip.iter().map(|c| c.image.clone()).collect();
-                            save_video_simple(&v, "data/hello.mp4", 20)
+                            for f in &v {
+                                info!("{:?}", f.dimensions());
+                            }
+                            save_video(&v, 20, Path::new("data/hello.mp4"))
                                 .expect("failed to save clip");
                             info!("Saved clip in {clip_path}");
                         }
+                        clip.clear();
                         recording = false;
                     }
                 }

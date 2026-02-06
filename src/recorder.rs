@@ -1,18 +1,14 @@
 use std::{
     collections::VecDeque,
-    sync::{
-        Arc, Mutex,
-        mpsc::{self, Sender},
-    },
-    thread::yield_now,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
-use tracing::{error, info};
+use tracing::error;
 
-use crate::{bus::Event, capturer::CapturedFrame};
+use crate::capturer::CapturedFrame;
 
-const FRAME_EXPIRE: Duration = Duration::from_secs(3);
+const FRAME_EXPIRE: Duration = Duration::from_secs(1);
 
 pub struct Recorder {
     frames: Mutex<VecDeque<Arc<CapturedFrame>>>,
@@ -34,7 +30,7 @@ impl Recorder {
             }
         };
 
-        frames.retain(|c| c.timestamp.elapsed() > FRAME_EXPIRE);
+        frames.retain(|c| c.timestamp.elapsed() < FRAME_EXPIRE);
 
         frames.push_back(frame);
     }

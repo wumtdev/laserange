@@ -11,11 +11,8 @@ use crate::{
     capturer::CapturedFrame,
     hits::detector::{HitDetectorCommand, start_hit_detector},
     recorder::Recorder,
-    targets::{
-        TargetInfo,
-        recognizer::{TargetRecognizerCommand, start_target_recognizer},
-    },
-    vision::{frame::find_rectangle_vertices, laser::find_red_laser, project::unwarp_rectangle},
+    targets::recognizer::start_target_recognizer,
+    vision::project::unwarp_rectangle,
 };
 
 mod bus;
@@ -39,26 +36,30 @@ fn main() {
         let laser_info = Arc::new(RwLock::new(None));
         let recorder = Arc::new(Recorder::new());
         let capturer = crate::capturer::start_capturer(tx.clone());
-        let target_recognizer = start_target_recognizer(recorder.clone(), target_info.clone());
+        let last_camera_frame = Arc::new(RwLock::new(None));
+        let target_recognizer =
+            start_target_recognizer(target_info.clone(), last_camera_frame.clone());
         let hit_detector = start_hit_detector(tx.clone(), laser_info.clone(), recorder.clone());
 
         for event in rx.iter() {
             match event {
                 Event::NewFrame(captured_frame) => {
                     // info!("Received new frame");
-                    recorder.push_frame(captured_frame.clone());
 
-                    let mut frame = captured_frame.image.clone();
-                    let mut target_frame = None;
+                    *last_camera_frame.write().unwrap() = Some(captured_frame.clone());
+
+                    let mut ui_camera_frame = captured_frame.image.clone();
+                    let mut ui_target_frame = None;
 
                     if let Some(target_info) = &*target_info.read().unwrap() {
                         if let Some(mut frame) =
-                            unwarp_rectangle(&frame, &target_info.rect, 600, 800)
+                            unwarp_rectangle(&ui_camera_frame, &target_info.rect, 600, 800)
                         {
                             let captured_frame = Arc::new(CapturedFrame {
                                 image: frame.clone(),
                                 timestamp: captured_frame.timestamp,
                             });
+                            recorder.push_frame(captured_frame.clone());
                             hit_detector
                                 .send(HitDetectorCommand::NewFrame(captured_frame))
                                 .unwrap();
@@ -79,10 +80,10 @@ fn main() {
                                     Rgb([255, 0, 0]),
                                 );
                             }
-                            target_frame = Some(frame);
+                            ui_target_frame = Some(frame);
                         }
                         imageproc::drawing::draw_hollow_polygon_mut(
-                            &mut frame,
+                            &mut ui_camera_frame,
                             &target_info.rect,
                             Rgb([0, 255, 0]),
                         );
@@ -92,14 +93,14 @@ fn main() {
                     slint::invoke_from_event_loop(move || {
                         // Create image in UI thread
                         let buffer = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::clone_from_slice(
-                            frame.as_raw(),
-                            frame.width(),
-                            frame.height(),
+                            ui_camera_frame.as_raw(),
+                            ui_camera_frame.width(),
+                            ui_camera_frame.height(),
                         );
                         let image = slint::Image::from_rgb8(buffer);
                         let ui = ui.upgrade().unwrap();
                         ui.set_camera_frame(image);
-                        if let Some(frame) = target_frame {
+                        if let Some(frame) = ui_target_frame {
                             let buffer =
                                 slint::SharedPixelBuffer::<slint::Rgb8Pixel>::clone_from_slice(
                                     frame.as_raw(),
@@ -108,6 +109,8 @@ fn main() {
                                 );
                             let image = slint::Image::from_rgb8(buffer);
                             ui.set_target_frame(image);
+                        } else {
+                            ui.set_target_frame(slint::Image::default());
                         }
                     })
                     .ok();

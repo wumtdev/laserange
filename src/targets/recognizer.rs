@@ -11,16 +11,13 @@ use image::buffer::ConvertBuffer;
 use imageproc::edges::canny;
 use tracing::info;
 
-use crate::{
-    capturer::CapturedFrame, recorder::Recorder, targets::TargetInfo,
-    vision::frame::find_rectangle_vertices,
-};
+use crate::{capturer::CapturedFrame, targets::TargetInfo, vision::frame::find_rectangle_vertices};
 
 pub enum TargetRecognizerCommand {}
 
 pub fn start_target_recognizer(
-    recorder: Arc<Recorder>,
     target_info_share: Arc<RwLock<Option<TargetInfo>>>,
+    last_camera_frame: Arc<RwLock<Option<Arc<CapturedFrame>>>>,
 ) -> Sender<TargetRecognizerCommand> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -29,14 +26,14 @@ pub fn start_target_recognizer(
         let mut processed_frame: Option<Arc<CapturedFrame>> = None;
         loop {
             while last_recognition_at.elapsed() < recognition_interval {
-                if let Ok(msg) =
+                if let Ok(..) =
                     rx.recv_timeout(recognition_interval - last_recognition_at.elapsed())
                 {
                     info!("Command received");
                 }
             }
 
-            let frame = match recorder.last_frame() {
+            let frame = match last_camera_frame.read().unwrap().clone() {
                 Some(v) => v,
                 None => continue,
             };
