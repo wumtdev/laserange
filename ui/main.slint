@@ -3,6 +3,10 @@ import {
     VerticalBox,
     HorizontalBox,
     GroupBox,
+    Button,
+    CheckBox,
+    Switch,
+    LineEdit,
 } from "std-widgets.slint";
 import { CameraFeed } from "CameraFeed.slint";
 
@@ -19,29 +23,76 @@ export component MainWindow inherits Window {
 
     HorizontalBox {
         padding: 10px;
+        GroupBox {
+            title: "Camera";
+            VerticalBox {
 
-        VerticalBox {
+                CameraFeed {
+                    source: camera-frame;
+                    vertical-stretch: 1;
+                }
 
-            CameraFeed {
-                camera-frame: camera-frame;
-                vertical-stretch: 1;
-            }
+                GroupBox {
+                    vertical-stretch: 0;
+                    HorizontalLayout {
+                        Text {
+                            text: "Zoom";
+                            vertical-alignment: center;
+                        }
 
-            GroupBox {
-                title: "Zoom";
-                vertical-stretch: 0;
-                Slider {
-                    minimum: 1;
-                    maximum: 20;
-                    value: 9;
-                    enabled: camera-zoom-supported;
+                        Slider {
+                            minimum: 1;
+                            maximum: 20;
+                            value: 9;
+                            enabled: camera-zoom-supported;
+                        }
+                    }
                 }
             }
         }
 
-        Image {
-            source: camera-frame;
-            image-fit: contain;
+        GroupBox {
+            title: "Target";
+            VerticalBox {
+                Image {
+                    source: target-frame;
+                    image-fit: contain;
+                    vertical-stretch: 1;
+                }
+
+                GroupBox {
+                    vertical-stretch: 0;
+                    VerticalLayout {
+                        spacing: 0.4rem;
+                        Button {
+                            text: "Refresh";
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+                            spacing: 2rem;
+                            Switch {
+                                text: "Auto refresh interval";
+                            }
+
+                            HorizontalLayout {
+                                spacing: 0.5rem;
+
+                                LineEdit {
+                                    width: 7rem;
+                                    text: 0;
+                                    input-type: number;
+                                }
+
+                                Text {
+                                    text: "sec";
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

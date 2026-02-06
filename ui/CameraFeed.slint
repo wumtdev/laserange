@@ -1,6 +1,4 @@
-export component CameraFeed inherits Rectangle {
-    in property <image> camera-frame;
-    
+export component CameraFeed inherits Image {
     // Selection state
     in-out property <bool> is-selecting: false;
     in-out property <float> start-x: 0;
@@ -15,11 +13,9 @@ export component CameraFeed inherits Rectangle {
     property <length> rect-height: abs(end-y - start-y) * self.height;
 
     // Source image
-    Image {
-        source: root.camera-frame;
-        image-fit: contain;
-    }
-        
+    image-fit: contain;
+    
+    
     // Selection rectangle
     if root.is-selecting || root.rect-width > 0px: Rectangle {
         x: root.rect-x;

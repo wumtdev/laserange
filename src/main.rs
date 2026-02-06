@@ -20,6 +20,7 @@ use crate::{
 
 mod bus;
 mod capturer;
+mod coding;
 mod hits;
 mod recorder;
 mod targets;

@@ -50,4 +50,8 @@ impl Recorder {
 
         frames.back().cloned()
     }
+
+    pub fn frames(&self) -> Vec<Arc<CapturedFrame>> {
+        self.frames.lock().unwrap().iter().cloned().collect()
+    }
 }
