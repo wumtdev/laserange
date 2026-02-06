@@ -1,9 +1,9 @@
 slint::include_modules!();
 
-use image::{GrayImage, Rgb, buffer::ConvertBuffer, imageops::grayscale};
-use imageproc::{contours, edges::canny, rect::Rect};
-use slint::Weak;
-use std::sync::{Arc, Mutex, RwLock, mpsc};
+use image::Rgb;
+use imageproc::rect::Rect;
+use slint::ComponentHandle;
+use std::sync::{Arc, RwLock, mpsc};
 use tracing::info;
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     hits::detector::{HitDetectorCommand, start_hit_detector},
     recorder::Recorder,
     targets::recognizer::start_target_recognizer,
-    vision::project::unwarp_rectangle,
+    vision::{crop::crop_image, project::unwarp_rectangle},
 };
 
 mod bus;
@@ -29,12 +29,14 @@ fn main() {
     let ui = MainWindow::new().unwrap();
 
     let ui_weak = ui.as_weak();
+    let (tx, rx) = mpsc::channel();
+    let app_tx = tx.clone();
 
     std::thread::spawn(move || {
-        let (tx, rx) = mpsc::channel();
         let target_info = Arc::new(RwLock::new(None));
         let laser_info = Arc::new(RwLock::new(None));
         let recorder = Arc::new(Recorder::new());
+        let mut target_stencil = (0f32, 0f32, 1f32, 1f32);
         let capturer = crate::capturer::start_capturer(tx.clone());
         let last_camera_frame = Arc::new(RwLock::new(None));
         let target_recognizer =
@@ -45,15 +47,15 @@ fn main() {
             match event {
                 Event::NewFrame(captured_frame) => {
                     // info!("Received new frame");
+                    let mut ui_camera_frame = captured_frame.image.clone();
 
                     *last_camera_frame.write().unwrap() = Some(captured_frame.clone());
 
-                    let mut ui_camera_frame = captured_frame.image.clone();
                     let mut ui_target_frame = None;
 
                     if let Some(target_info) = &*target_info.read().unwrap() {
                         if let Some(mut frame) =
-                            unwarp_rectangle(&ui_camera_frame, &target_info.rect, 600, 800)
+                            unwarp_rectangle(&captured_frame.image, &target_info.rect, 600, 800)
                         {
                             let captured_frame = Arc::new(CapturedFrame {
                                 image: frame.clone(),
@@ -115,9 +117,19 @@ fn main() {
                     })
                     .ok();
                 }
+                Event::NewStencil(new) => {
+                    target_stencil = new;
+                }
             }
         }
     });
+    ui.global::<TargetStencil>()
+        .on_change(move |start_x, start_y, end_x, end_y| {
+            info!("changed {start_x}, {start_y}, {end_x}, {end_y}");
+            app_tx
+                .send(Event::NewStencil((start_x, start_y, end_x, end_y)))
+                .unwrap();
+        });
 
     ui.run().unwrap();
 }

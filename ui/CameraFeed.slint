@@ -1,16 +1,22 @@
-export component CameraFeed inherits Image {
-    // Selection state
-    in-out property <bool> is-selecting: false;
+
+
+export global TargetStencil {
     in-out property <float> start-x: 0;
     in-out property <float> start-y: 0;
     in-out property <float> end-x: 1;
     in-out property <float> end-y: 1;
+    callback change(float, float, float, float);
+}
+
+export component CameraFeed inherits Image {
+    // Selection state
+    in-out property <bool> is-selecting: false;
     
     // Computed rectangle bounds
-    property <length> rect-x: min(start-x, end-x) * self.width;
-    property <length> rect-y: min(start-y, end-y) * self.height;
-    property <length> rect-width: abs(end-x - start-x) * self.width;
-    property <length> rect-height: abs(end-y - start-y) * self.height;
+    property <length> rect-x: min(TargetStencil.start-x, TargetStencil.end-x) * self.width;
+    property <length> rect-y: min(TargetStencil.start-y, TargetStencil.end-y) * self.height;
+    property <length> rect-width: abs(TargetStencil.end-x - TargetStencil.start-x) * self.width;
+    property <length> rect-height: abs(TargetStencil.end-y - TargetStencil.start-y) * self.height;
 
     // Source image
     image-fit: contain;
@@ -32,18 +38,23 @@ export component CameraFeed inherits Image {
         pointer-event(event) => {
             if event.kind == PointerEventKind.down {
                 root.is-selecting = true;
-                root.start-x = self.mouse-x / self.width;
-                root.start-y = self.mouse-y / self.height;
-                root.end-x = root.start-x;
-                root.end-y = root.start-y;
+                TargetStencil.start-x = self.mouse-x / self.width;
+                TargetStencil.start-y = self.mouse-y / self.height;
             } else if event.kind == PointerEventKind.up {
                 root.is-selecting = false;
+                TargetStencil.change(
+                    min(TargetStencil.start-x, TargetStencil.end-x),
+                    min(TargetStencil.start-y, TargetStencil.end-y),
+                    max(TargetStencil.start-x, TargetStencil.end-x),
+                    max(TargetStencil.start-y, TargetStencil.end-y),
+                );
             }
         }
         moved => {
             if root.is-selecting {
-                root.end-x = clamp(self.mouse-x / self.width, 0, 1);
-                root.end-y = clamp(self.mouse-y / self.height, 0, 1);
+                TargetStencil.end-x = clamp(self.mouse-x / self.width, 0, 1);
+                TargetStencil.end-y = clamp(self.mouse-y / self.height, 0, 1);
+                // TargetStencil.change(TargetStencil.start-x, TargetStencil.start-y, TargetStencil.end-x, TargetStencil.end-y);
             }
         }
     }

@@ -26,8 +26,7 @@ pub fn start_target_recognizer(
         let mut processed_frame: Option<Arc<CapturedFrame>> = None;
         loop {
             while last_recognition_at.elapsed() < recognition_interval {
-                if let Ok(..) =
-                    rx.recv_timeout(recognition_interval - last_recognition_at.elapsed())
+                if rx.recv_timeout(recognition_interval - last_recognition_at.elapsed()).is_ok()
                 {
                     info!("Command received");
                 }

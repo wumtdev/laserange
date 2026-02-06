@@ -4,10 +4,8 @@ use std::{
         Arc, RwLock,
         mpsc::{self, Sender},
     },
-    time::Instant,
 };
 
-use image::RgbImage;
 use tracing::info;
 
 use crate::{

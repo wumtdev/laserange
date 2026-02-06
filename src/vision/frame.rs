@@ -1,9 +1,7 @@
-use image::RgbImage;
 use imageproc::point::Point;
 
 // use image::RgbImage;
-use imageproc::contours::{BorderType, Contour, find_contours};
-use imageproc::edges::canny;
+use imageproc::contours::Contour;
 // use imageproc::point::Point;
 
 pub fn find_rectangle_vertices(contours: &[Contour<u32>]) -> Option<[Point<f32>; 4]> {

@@ -7,10 +7,11 @@ import {
     CheckBox,
     Switch,
     LineEdit,
+    GridBox,
 } from "std-widgets.slint";
-import { CameraFeed } from "CameraFeed.slint";
+import { CameraFeed, TargetStencil } from "CameraFeed.slint";
 
-
+export { TargetStencil }
 
 export component MainWindow inherits Window {
     title: "Camera";
@@ -26,9 +27,15 @@ export component MainWindow inherits Window {
         GroupBox {
             title: "Camera";
             VerticalBox {
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        CameraFeed {
+                            source: camera-frame;
+                        }
+                    }
 
-                CameraFeed {
-                    source: camera-frame;
                     vertical-stretch: 1;
                 }
 
