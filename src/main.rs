@@ -1,22 +1,7 @@
 slint::include_modules!();
 
-use image::Rgb;
-use imageproc::rect::Rect;
 use slint::ComponentHandle;
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex, RwLock, mpsc},
-};
 use tracing::info;
-
-use crate::{
-    bus::Event,
-    capturer::CapturedFrame,
-    hits::detector::{HitDetectorCommand, start_hit_detector},
-    recorder::Recorder,
-    targets::recognizer::start_target_recognizer,
-    vision::{crop::crop_image, project::unwarp_rectangle},
-};
 
 mod bus;
 mod capturer;
@@ -31,99 +16,38 @@ fn main() {
     tracing_subscriber::fmt().init();
 
     let ui = MainWindow::new().unwrap();
-
     let ui_weak = ui.as_weak();
-    let (tx, rx) = mpsc::channel();
-    let app_tx = tx.clone();
 
+    // Start app event loop
+    let (bus_tx, bus_rx) = crate::bus::start();
+
+    // UI event handling thread
     std::thread::spawn(move || {
-        let target_info = Arc::new(RwLock::new(None));
-        let laser_info = Arc::new(RwLock::new(None));
-        let recorder = Arc::new(Recorder::new());
-        let mut target_stencil = (0f32, 0f32, 1f32, 1f32);
-        let capturer = crate::capturer::start_capturer(tx.clone());
-        let last_camera_frame = Arc::new(RwLock::new(None));
-        let target_recognizer =
-            start_target_recognizer(target_info.clone(), last_camera_frame.clone());
-        let hit_detector = start_hit_detector(tx.clone(), laser_info.clone(), recorder.clone());
-
-        let hit_manager = crate::hits::manager::start_hit_manager(
-            tx.clone(),
-            Box::new(crate::hits::storage::FileHitStorage::new("data/hits")),
-        );
-
-        let hit_processor = crate::hits::processor::start_hit_processor(tx.clone());
-
-        for event in rx.iter() {
-            match event {
-                Event::NewFrame(captured_frame) => {
-                    // info!("Received new frame");
-                    let mut ui_camera_frame = captured_frame.image.clone();
-
-                    *last_camera_frame.write().unwrap() = Some(captured_frame.clone());
-
-                    let mut ui_target_frame = None;
-
-                    if let Some(target_info) = &*target_info.read().unwrap() {
-                        if let Some(mut frame) =
-                            unwarp_rectangle(&captured_frame.image, &target_info.rect, 600, 800)
-                        {
-                            let captured_frame = Arc::new(CapturedFrame {
-                                image: frame.clone(),
-                                timestamp: captured_frame.timestamp,
-                            });
-                            recorder.push_frame(captured_frame.clone());
-                            hit_detector
-                                .send(HitDetectorCommand::NewFrame(captured_frame))
-                                .unwrap();
-                            if let Some(laser_info) = &*laser_info.read().unwrap() {
-                                imageproc::drawing::draw_cross_mut(
-                                    &mut frame,
-                                    Rgb([255, 0, 0]),
-                                    laser_info.pos.x as i32,
-                                    laser_info.pos.y as i32,
-                                );
-                                imageproc::drawing::draw_hollow_rect_mut(
-                                    &mut frame,
-                                    Rect::at(
-                                        laser_info.pos.x as i32 - 10,
-                                        laser_info.pos.y as i32 - 10,
-                                    )
-                                    .of_size(20, 20),
-                                    Rgb([255, 0, 0]),
-                                );
-                            }
-                            ui_target_frame = Some(frame);
-                        }
-                        imageproc::drawing::draw_hollow_polygon_mut(
-                            &mut ui_camera_frame,
-                            target_info
-                                .rect
-                                .iter()
-                                .map(Into::into)
-                                .collect::<Vec<_>>()
-                                .as_slice(),
-                            Rgb([0, 255, 0]),
-                        );
-                    }
-
+        for msg in bus_rx.iter() {
+            match msg {
+                crate::bus::AppMessage::FrameReady {
+                    camera_frame,
+                    target_frame,
+                } => {
                     let ui = ui_weak.clone();
                     slint::invoke_from_event_loop(move || {
-                        // Create image in UI thread
+                        // Create camera image and set it
                         let buffer = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::clone_from_slice(
-                            ui_camera_frame.as_raw(),
-                            ui_camera_frame.width(),
-                            ui_camera_frame.height(),
+                            camera_frame.as_raw(),
+                            camera_frame.width(),
+                            camera_frame.height(),
                         );
                         let image = slint::Image::from_rgb8(buffer);
                         let ui = ui.upgrade().unwrap();
                         ui.set_camera_frame(image);
-                        if let Some(frame) = ui_target_frame {
+
+                        // Set target frame if available
+                        if let Some(target_img) = &target_frame {
                             let buffer =
                                 slint::SharedPixelBuffer::<slint::Rgb8Pixel>::clone_from_slice(
-                                    frame.as_raw(),
-                                    frame.width(),
-                                    frame.height(),
+                                    target_img.as_raw(),
+                                    target_img.width(),
+                                    target_img.height(),
                                 );
                             let image = slint::Image::from_rgb8(buffer);
                             ui.set_target_frame(image);
@@ -133,23 +57,18 @@ fn main() {
                     })
                     .ok();
                 }
-                Event::NewStencil(new) => {
-                    target_stencil = new;
-                }
-                Event::HitProcessorReady => todo!(),
-                Event::ProcessHit {
-                    timestamp,
-                    clip,
-                    target_info,
-                } => todo!(),
             }
         }
     });
+
+    // UI stencil change handler
     ui.global::<TargetStencil>()
         .on_change(move |start_x, start_y, end_x, end_y| {
             info!("changed {start_x}, {start_y}, {end_x}, {end_y}");
-            app_tx
-                .send(Event::NewStencil((start_x, start_y, end_x, end_y)))
+            bus_tx
+                .send(crate::bus::AppCommand::NewStencil((
+                    start_x, start_y, end_x, end_y,
+                )))
                 .unwrap();
         });
 
