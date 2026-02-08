@@ -38,8 +38,8 @@ pub fn save_video(frames: &[RgbImage], fps: u32, output_path: &Path) -> Result<(
             output_path.to_str().ok_or("Invalid path")?,
         ])
         .stdin(Stdio::piped()) // Pipe our data to ffmpeg's stdin
-        .stdout(Stdio::inherit()) // Show ffmpeg logs in console (optional)
-        .stderr(Stdio::inherit())
+        .stdout(Stdio::null()) // Show ffmpeg logs in console (optional)
+        .stderr(Stdio::null()) // Show errors in console
         .spawn()?;
 
     // 2. Write frames to the ffmpeg stdin
@@ -123,7 +123,7 @@ pub fn load_video(input_path: &Path) -> Result<(Vec<RgbImage>, u32), Box<dyn Err
             "-",     // Write output to stdout
         ])
         .stdout(Stdio::piped()) // Capture ffmpeg's stdout
-        .stderr(Stdio::null()) // Suppress ffmpeg logs (or use inherit for debugging)
+        .stderr(Stdio::null()) // Show errors in console
         .spawn()?;
 
     // 3. Read raw RGB24 data from ffmpeg stdout
