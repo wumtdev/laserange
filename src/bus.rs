@@ -9,21 +9,33 @@ use imageproc::rect::Rect;
 
 use crate::{
     capturer::CapturedFrame,
-    hits::detector::{HitDetectorCommand, start_hit_detector},
+    hits::{
+        detector::{HitDetectorCommand, start_hit_detector},
+        manager::HitManagerCommand,
+        processor::{HitProcessResult, HitProcessorCommand},
+    },
     recorder::Recorder,
-    targets::TargetInfo,
-    targets::recognizer::start_target_recognizer,
+    targets::{TargetInfo, recognizer::start_target_recognizer},
     vision::project::unwarp_rectangle,
 };
 
 pub enum Event {
     NewFrame(Arc<CapturedFrame>),
     NewStencil((f32, f32, f32, f32)),
+    NewHit {
+        timestamp: DateTime<Local>,
+        clip: (Vec<RgbImage>, u32),
+        target_info: TargetInfo,
+    },
     HitProcessorReady,
     ProcessHit {
         timestamp: DateTime<Local>,
         clip: (Vec<RgbImage>, u32),
         target_info: TargetInfo,
+    },
+    ProcessedHit {
+        timestamp: DateTime<Local>,
+        processed: HitProcessResult,
     },
 }
 
@@ -57,7 +69,12 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
         let last_camera_frame = Arc::new(std::sync::RwLock::new(None));
         let _target_recognizer =
             start_target_recognizer(target_info.clone(), last_camera_frame.clone());
-        let hit_detector = start_hit_detector(bus_tx.clone(), laser_info.clone(), recorder.clone());
+        let hit_detector = start_hit_detector(
+            bus_tx.clone(),
+            laser_info.clone(),
+            target_info.clone(),
+            recorder.clone(),
+        );
 
         let _hit_manager = crate::hits::manager::start_hit_manager(
             bus_tx.clone(),
@@ -129,10 +146,42 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
                     Event::NewStencil(_) => {}
                     Event::HitProcessorReady => {}
                     Event::ProcessHit {
-                        timestamp: _,
-                        clip: _,
-                        target_info: _,
-                    } => {}
+                        timestamp,
+                        clip,
+                        target_info,
+                    } => {
+                        _hit_processor
+                            .send(HitProcessorCommand::ProcessHit {
+                                timestamp,
+                                clip,
+                                target_info,
+                            })
+                            .expect("failed to request hit process");
+                    }
+                    Event::NewHit {
+                        timestamp,
+                        clip,
+                        target_info,
+                    } => {
+                        _hit_manager
+                            .send(HitManagerCommand::NewHit {
+                                timestamp,
+                                clip,
+                                target_info,
+                            })
+                            .unwrap();
+                    }
+                    Event::ProcessedHit {
+                        timestamp,
+                        processed,
+                    } => {
+                        _hit_manager
+                            .send(HitManagerCommand::ProcessedHit {
+                                timestamp,
+                                processed,
+                            })
+                            .expect("failed to send hit process result to manager");
+                    }
                 }
             }
             for cmd in ui_rx.try_iter() {

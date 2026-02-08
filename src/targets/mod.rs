@@ -5,7 +5,7 @@ use crate::util::point::MyPoint;
 
 pub mod recognizer;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct TargetInfo {
     pub rect: [MyPoint<f32>; 4],
 }

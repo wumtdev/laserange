@@ -10,7 +10,7 @@ pub struct HitProcessResult {}
 pub enum HitProcessorCommand {
     ProcessHit {
         timestamp: chrono::DateTime<chrono::Local>,
-        clip: Vec<image::RgbImage>,
+        clip: (Vec<image::RgbImage>, u32),
         target_info: crate::targets::TargetInfo,
     },
 }

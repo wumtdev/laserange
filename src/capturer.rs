@@ -6,6 +6,7 @@ use std::{
     time::Instant,
 };
 
+use chrono::{DateTime, Local};
 use image::RgbImage;
 use nokhwa::{
     Camera,
@@ -17,7 +18,7 @@ use tracing::info;
 use crate::bus::Event;
 
 pub struct CapturedFrame {
-    pub timestamp: Instant,
+    pub timestamp: DateTime<Local>,
     pub image: RgbImage,
 }
 
@@ -53,7 +54,7 @@ pub fn start_capturer(app_tx: Sender<Event>) -> Sender<CapturerCommand> {
                 .expect("failed to decode frame image");
 
             let frame = CapturedFrame {
-                timestamp: Instant::now(),
+                timestamp: Local::now(),
                 image: frame,
             };
 

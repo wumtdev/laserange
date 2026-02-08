@@ -4,11 +4,12 @@ use std::{
     time::Duration,
 };
 
+use chrono::{Local, TimeDelta};
 use tracing::error;
 
 use crate::capturer::CapturedFrame;
 
-const FRAME_EXPIRE: Duration = Duration::from_secs(1);
+const FRAME_EXPIRE: TimeDelta = TimeDelta::seconds(1);
 
 pub struct Recorder {
     frames: Mutex<VecDeque<Arc<CapturedFrame>>>,
@@ -30,7 +31,9 @@ impl Recorder {
             }
         };
 
-        frames.retain(|c| c.timestamp.elapsed() < FRAME_EXPIRE);
+        let now = Local::now();
+
+        frames.retain(|c| (now - c.timestamp) < FRAME_EXPIRE);
 
         frames.push_back(frame);
     }

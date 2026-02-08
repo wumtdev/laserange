@@ -9,7 +9,10 @@ use tracing::{error, info};
 
 use crate::{
     bus::Event,
-    hits::storage::{HitData, HitStorage},
+    hits::{
+        processor::HitProcessResult,
+        storage::{HitData, HitStorage},
+    },
     targets::TargetInfo,
 };
 use std::collections::VecDeque;
@@ -17,11 +20,14 @@ use std::collections::VecDeque;
 pub enum HitManagerCommand {
     NewHit {
         timestamp: DateTime<Local>,
-        clip: Vec<RgbImage>,
-        fps: u32,
+        clip: (Vec<RgbImage>, u32),
         target_info: TargetInfo,
     },
     HitProcessorReady,
+    ProcessedHit {
+        timestamp: DateTime<Local>,
+        processed: HitProcessResult,
+    },
 }
 
 pub fn start_hit_manager(
@@ -41,14 +47,13 @@ pub fn start_hit_manager(
                 HitManagerCommand::NewHit {
                     timestamp,
                     clip,
-                    fps,
                     target_info,
                 } => {
                     if let Err(e) = storage.new_hit(
                         timestamp,
-                        (&clip, fps),
+                        (&clip.0, clip.1),
                         HitData {
-                            target_info,
+                            target_info: target_info.clone(),
                             processed: None,
                         },
                     ) {
@@ -56,9 +61,20 @@ pub fn start_hit_manager(
                         continue;
                     };
 
-                    unprocessed_hits.push_back(timestamp);
+                    if recognizer_ready {
+                        bus_tx
+                            .send(Event::ProcessHit {
+                                timestamp,
+                                clip,
+                                target_info,
+                            })
+                            .expect("failed to request hit process");
+                    } else {
+                        unprocessed_hits.push_back(timestamp);
+                    }
                 }
                 HitManagerCommand::HitProcessorReady => {
+                    recognizer_ready = true;
                     while recognizer_ready {
                         let timestamp = match unprocessed_hits.pop_front() {
                             Some(t) => t,
@@ -89,6 +105,22 @@ pub fn start_hit_manager(
                             .expect("failed to request hit process");
                         recognizer_ready = false;
                     }
+                }
+                HitManagerCommand::ProcessedHit {
+                    timestamp,
+                    processed,
+                } => {
+                    let mut data = match storage.load_data(timestamp) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error!("failed to load hit {timestamp} from storage: {e:?}");
+                            continue;
+                        }
+                    };
+                    data.processed = Some(processed);
+                    storage
+                        .save_data(timestamp, data)
+                        .expect("failed to save hit {timestamp} process result");
                 }
             }
         }
