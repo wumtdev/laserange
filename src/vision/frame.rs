@@ -2,9 +2,11 @@ use imageproc::point::Point;
 
 // use image::RgbImage;
 use imageproc::contours::Contour;
+
+use crate::util::point::MyPoint;
 // use imageproc::point::Point;
 
-pub fn find_rectangle_vertices(contours: &[Contour<u32>]) -> Option<[Point<f32>; 4]> {
+pub fn find_rectangle_vertices(contours: &[Contour<u32>]) -> Option<[MyPoint<f32>; 4]> {
     // Find largest contour (should be the rectangle)
     let largest = contours.iter().max_by_key(|c| c.points.len())?;
 
@@ -33,7 +35,12 @@ pub fn find_rectangle_vertices(contours: &[Contour<u32>]) -> Option<[Point<f32>;
         .iter()
         .min_by(|a, b| (a.x - a.y).partial_cmp(&(b.x - b.y)).unwrap())?;
 
-    Some([*top_left, *top_right, *bottom_right, *bottom_left])
+    Some([
+        top_left.into(),
+        top_right.into(),
+        bottom_right.into(),
+        bottom_left.into(),
+    ])
 }
 
 // pub fn find_rectangle_vertices(img: &RgbImage) -> Option<[Point<f32>; 4]> {

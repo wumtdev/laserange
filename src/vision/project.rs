@@ -2,9 +2,11 @@ use image::RgbImage;
 use imageproc::geometric_transformations::{Projection, warp_into};
 use imageproc::point::Point;
 
+use crate::util::point::MyPoint;
+
 pub fn unwarp_rectangle(
     img: &RgbImage,
-    vertices: &[Point<f32>; 4],
+    vertices: &[MyPoint<f32>; 4],
     output_width: u32,
     output_height: u32,
 ) -> Option<RgbImage> {

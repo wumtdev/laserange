@@ -3,7 +3,10 @@ slint::include_modules!();
 use image::Rgb;
 use imageproc::rect::Rect;
 use slint::ComponentHandle;
-use std::sync::{Arc, RwLock, mpsc};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex, RwLock, mpsc},
+};
 use tracing::info;
 
 use crate::{
@@ -21,6 +24,7 @@ mod coding;
 mod hits;
 mod recorder;
 mod targets;
+mod util;
 mod vision;
 
 fn main() {
@@ -42,6 +46,13 @@ fn main() {
         let target_recognizer =
             start_target_recognizer(target_info.clone(), last_camera_frame.clone());
         let hit_detector = start_hit_detector(tx.clone(), laser_info.clone(), recorder.clone());
+
+        let hit_manager = crate::hits::manager::start_hit_manager(
+            tx.clone(),
+            Box::new(crate::hits::storage::FileHitStorage::new("data/hits")),
+        );
+
+        let hit_processor = crate::hits::processor::start_hit_processor(tx.clone());
 
         for event in rx.iter() {
             match event {
@@ -86,7 +97,12 @@ fn main() {
                         }
                         imageproc::drawing::draw_hollow_polygon_mut(
                             &mut ui_camera_frame,
-                            &target_info.rect,
+                            target_info
+                                .rect
+                                .iter()
+                                .map(Into::into)
+                                .collect::<Vec<_>>()
+                                .as_slice(),
                             Rgb([0, 255, 0]),
                         );
                     }
@@ -120,6 +136,12 @@ fn main() {
                 Event::NewStencil(new) => {
                     target_stencil = new;
                 }
+                Event::HitProcessorReady => todo!(),
+                Event::ProcessHit {
+                    timestamp,
+                    clip,
+                    target_info,
+                } => todo!(),
             }
         }
     });

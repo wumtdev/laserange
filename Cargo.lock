@@ -2756,9 +2756,13 @@ dependencies = [
 name = "laserslint"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
  "image",
  "imageproc",
  "nokhwa",
+ "serde",
+ "serde_json",
  "slint",
  "slint-build",
  "tracing",
