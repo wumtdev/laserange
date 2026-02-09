@@ -5,7 +5,7 @@ use std::{fs, io::BufReader, io::BufWriter, path::PathBuf};
 
 use crate::hits::storage::{HitData, HitStorage};
 
-const TIMESTAMP_DIR_FORMAT: &'static str = "%Y-%m-%d_%H-%M-%S.%.3f";
+const TIMESTAMP_DIR_FORMAT: &'static str = "%Y-%m-%d_%H-%M-%S%.3f";
 
 pub struct FileHitStorage {
     base: PathBuf,

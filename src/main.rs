@@ -6,7 +6,7 @@ use tracing::info;
 
 use crate::bus::AppMessage;
 
-const TIMESTAMP_UI_FORMAT: &'static str = "%Y-%m-%d_%H-%M-%S.%.3f";
+const TIMESTAMP_UI_FORMAT: &'static str = "%Y-%m-%d_%H-%M-%S%.3f";
 
 mod bus;
 mod capturer;
