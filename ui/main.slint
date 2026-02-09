@@ -10,8 +10,15 @@ import {
     GridBox,
 } from "std-widgets.slint";
 import { CameraFeed, TargetStencil } from "CameraFeed.slint";
+import {
+    HitManager,
+    HitManagerState,
+    HitInfo,
+    HitProcessResult,
+    TargetInfo,
+} from "HitManager.slint";
 
-export { TargetStencil }
+export { TargetStencil, HitManagerState, HitInfo, HitProcessResult, TargetInfo }
 
 export component MainWindow inherits Window {
     title: "Camera";
@@ -101,5 +108,7 @@ export component MainWindow inherits Window {
                 }
             }
         }
+
+        HitManager { }
     }
 }

@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc,
-    mpsc::{self, Receiver, Sender},
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        mpsc::{self, Receiver, Sender},
+    },
 };
 
 use chrono::{DateTime, Local};
@@ -13,6 +16,7 @@ use crate::{
         detector::{HitDetectorCommand, start_hit_detector},
         manager::HitManagerCommand,
         processor::{HitProcessResult, HitProcessorCommand},
+        storage::HitData,
     },
     recorder::Recorder,
     targets::{TargetInfo, recognizer::start_target_recognizer},
@@ -37,17 +41,36 @@ pub enum Event {
         timestamp: DateTime<Local>,
         processed: HitProcessResult,
     },
+    LoadedHits {
+        hits: HashMap<DateTime<Local>, HitData>,
+    },
+    LoadedHitClip {
+        timestamp: DateTime<Local>,
+        clip: (Vec<RgbImage>, u32),
+    },
 }
 
 pub enum AppCommand {
-    NewFrame(Arc<CapturedFrame>),
     NewStencil((f32, f32, f32, f32)),
+    RequestHitClip { timestamp: DateTime<Local> },
 }
 
 pub enum AppMessage {
     FrameReady {
         camera_frame: Arc<RgbImage>,
         target_frame: Option<Arc<RgbImage>>,
+    },
+    LoadedHits {
+        hits: HashMap<DateTime<Local>, HitData>,
+    },
+    LoadedHitClip {
+        timestamp: DateTime<Local>,
+        clip: (Vec<RgbImage>, u32),
+    },
+    NewHit {
+        timestamp: DateTime<Local>,
+        clip: (Vec<RgbImage>, u32),
+        target_info: TargetInfo,
     },
 }
 
@@ -166,6 +189,13 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
                         _hit_manager
                             .send(HitManagerCommand::NewHit {
                                 timestamp,
+                                clip: clip.clone(),
+                                target_info: target_info.clone(),
+                            })
+                            .unwrap();
+                        ui_tx
+                            .send(AppMessage::NewHit {
+                                timestamp,
                                 clip,
                                 target_info,
                             })
@@ -174,25 +204,29 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
                     Event::ProcessedHit {
                         timestamp,
                         processed,
-                    } => {
-                        _hit_manager
-                            .send(HitManagerCommand::ProcessedHit {
-                                timestamp,
-                                processed,
-                            })
-                            .expect("failed to send hit process result to manager");
-                    }
+                    } => _hit_manager
+                        .send(HitManagerCommand::ProcessedHit {
+                            timestamp,
+                            processed,
+                        })
+                        .expect("failed to send hit process result to manager"),
+                    Event::LoadedHits { hits } => ui_tx
+                        .send(AppMessage::LoadedHits { hits })
+                        .expect("failed to send loaded hits to ui"),
+                    Event::LoadedHitClip { timestamp, clip } => ui_tx
+                        .send(AppMessage::LoadedHitClip { timestamp, clip })
+                        .unwrap(),
                 }
             }
             for cmd in ui_rx.try_iter() {
                 match cmd {
-                    AppCommand::NewFrame(captured_frame) => {
-                        let _ = bus_tx.send(Event::NewFrame(captured_frame));
-                    }
                     AppCommand::NewStencil(stencil) => {
                         _target_stencil = stencil;
                         let _ = bus_tx.send(Event::NewStencil(stencil));
                     }
+                    AppCommand::RequestHitClip { timestamp } => _hit_manager
+                        .send(HitManagerCommand::RequestHitClip { timestamp })
+                        .unwrap(),
                 }
             }
             std::thread::yield_now()

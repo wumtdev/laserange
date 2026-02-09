@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bus::Event;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct HitProcessResult {}
 
 pub enum HitProcessorCommand {

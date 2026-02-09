@@ -1,0 +1,79 @@
+
+export struct HitProcessResult {
+    score: float,
+}
+
+export struct TargetInfo {
+    
+}
+
+export struct HitInfo {
+    timestamp: string,
+    processed: HitProcessResult,
+    is-processed: bool,
+    target-info: TargetInfo,
+}
+
+export global HitManagerState {
+    in property <[HitInfo]> hits;
+    in property <HitInfo> selected-hit;
+    in property <[image]> selected-hit-clip;
+    in property <bool> is-hit-selected: false;
+
+    callback request-hit-clip(timestamp: string);
+
+    changed selected-hit => {
+        if is-hit-selected {
+            request-hit-clip(selected-hit.timestamp);
+        }
+    }
+}
+
+import { GroupBox, ListView } from "std-widgets.slint";
+export component HitManager {
+    GroupBox {
+        title: "Hit Manager";
+        height: 100%;
+        VerticalLayout {
+            ListView {
+                min-width: 20rem;
+                vertical-stretch: 1;
+                for info in HitManagerState.hits: VerticalLayout {
+                    padding: 0.3rem;
+                    Rectangle {
+                        border-radius: 0.5rem;
+                        background: info.timestamp == HitManagerState.selected-hit.timestamp ? skyblue : gray;
+                        HorizontalLayout {
+                            padding: 0.5rem;
+
+                            Text {
+                                text: info.timestamp;
+                            }
+
+                            Text {
+                                text: info.is-processed ? info.processed.score : "Processing...";
+                            }
+                        }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                debug(info.timestamp);
+                                HitManagerState.is-hit-selected = true;
+                                HitManagerState.selected-hit = info;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if HitManagerState.is-hit-selected: GroupBox {
+                vertical-stretch: 0;
+                title: HitManagerState.selected-hit.timestamp;
+            }
+            if !HitManagerState.is-hit-selected: Text {
+                text: "Select hit to view";
+            }
+        }
+    }
+}

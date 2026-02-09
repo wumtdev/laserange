@@ -108,4 +108,37 @@ impl HitStorage for FileHitStorage {
 
         Ok(out)
     }
+
+    fn get_all_hits(&mut self) -> Result<std::collections::HashMap<DateTime<Local>, HitData>> {
+        use std::collections::HashMap;
+        let mut out = HashMap::new();
+        if !self.base.exists() {
+            return Ok(out);
+        }
+
+        for entry in fs::read_dir(&self.base)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(&name, TIMESTAMP_DIR_FORMAT) {
+                if let Some(dt) = Local.from_local_datetime(&naive).single() {
+                    let data_path = entry.path().join("data.json");
+                    if data_path.exists() {
+                        if let Ok(f) = fs::File::open(&data_path) {
+                            let res: Result<HitData, _> =
+                                serde_json::from_reader(BufReader::new(f));
+                            if let Ok(hit) = res {
+                                out.insert(dt, hit);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(out)
+    }
 }

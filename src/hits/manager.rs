@@ -1,3 +1,4 @@
+use core::time;
 use std::sync::{
     Arc,
     mpsc::{self, Sender},
@@ -28,6 +29,9 @@ pub enum HitManagerCommand {
         timestamp: DateTime<Local>,
         processed: HitProcessResult,
     },
+    RequestHitClip {
+        timestamp: DateTime<Local>,
+    },
 }
 
 pub fn start_hit_manager(
@@ -38,9 +42,29 @@ pub fn start_hit_manager(
 
     std::thread::spawn(move || {
         let mut recognizer_ready = true;
-        let unprocessed = storage
-            .get_unprocessed_hits_old_sorted()
-            .expect("failed to get unprocessed hits");
+        let unprocessed: VecDeque<(DateTime<Local>, HitData)> = {
+            let hits = storage
+                .get_all_hits()
+                .expect("failed to load hits from storage");
+            bus_tx
+                .send(Event::LoadedHits { hits: hits.clone() })
+                .expect("failed to send loaded hits event");
+            let mut v: Vec<_> = hits
+                .into_iter()
+                .filter_map(|(timestamp, hit)| {
+                    if hit.processed.is_none() {
+                        Some((timestamp, hit))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            v.sort_by_key(|v| v.0);
+            v.into()
+        };
+        // let unprocessed = storage
+        //     .get_unprocessed_hits_old_sorted()
+        //     .expect("failed to get unprocessed hits");
         let mut unprocessed_hits: VecDeque<_> = VecDeque::from(unprocessed);
         for msg in rx {
             match msg {
@@ -49,14 +73,11 @@ pub fn start_hit_manager(
                     clip,
                     target_info,
                 } => {
-                    if let Err(e) = storage.new_hit(
-                        timestamp,
-                        (&clip.0, clip.1),
-                        HitData {
-                            target_info: target_info.clone(),
-                            processed: None,
-                        },
-                    ) {
+                    let data = HitData {
+                        target_info: target_info.clone(),
+                        processed: None,
+                    };
+                    if let Err(e) = storage.new_hit(timestamp, (&clip.0, clip.1), data.clone()) {
                         error!("failed to create clip in storage: {e:?}");
                         continue;
                     };
@@ -70,13 +91,13 @@ pub fn start_hit_manager(
                             })
                             .expect("failed to request hit process");
                     } else {
-                        unprocessed_hits.push_back(timestamp);
+                        unprocessed_hits.push_back((timestamp, data));
                     }
                 }
                 HitManagerCommand::HitProcessorReady => {
                     recognizer_ready = true;
                     while recognizer_ready {
-                        let timestamp = match unprocessed_hits.pop_front() {
+                        let (timestamp, data) = match unprocessed_hits.pop_front() {
                             Some(t) => t,
                             None => break,
                         };
@@ -84,14 +105,6 @@ pub fn start_hit_manager(
                             Ok(v) => v,
                             Err(e) => {
                                 error!("failed to load unprocessed hit clip: {e:?}");
-                                continue;
-                            }
-                        };
-
-                        let data = match storage.load_data(timestamp) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                error!("failed to load unprocessed hit data: {e:?}");
                                 continue;
                             }
                         };
@@ -121,6 +134,19 @@ pub fn start_hit_manager(
                     storage
                         .save_data(timestamp, data)
                         .expect("failed to save hit {timestamp} process result");
+                }
+                HitManagerCommand::RequestHitClip { timestamp } => {
+                    let clip = match storage.load_clip(timestamp) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error!("failed to load hit {timestamp} clip from storage: {e:?}");
+                            continue;
+                        }
+                    };
+
+                    bus_tx
+                        .send(Event::LoadedHitClip { timestamp, clip })
+                        .unwrap();
                 }
             }
         }

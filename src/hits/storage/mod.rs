@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use chrono::{DateTime, Local, TimeZone};
 use image::RgbImage;
@@ -5,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{hits::processor::HitProcessResult, targets::TargetInfo};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct HitData {
     pub target_info: TargetInfo,
     pub processed: Option<HitProcessResult>,
@@ -26,6 +28,7 @@ pub trait HitStorage: Send {
     ) -> Result<()>;
 
     fn get_unprocessed_hits_old_sorted(&mut self) -> Result<Vec<DateTime<Local>>>;
+    fn get_all_hits(&mut self) -> Result<HashMap<DateTime<Local>, HitData>>;
 }
 
 pub mod file;
