@@ -29,7 +29,7 @@ export global HitManagerState {
     }
 }
 
-import { GroupBox, ListView } from "std-widgets.slint";
+import { GroupBox, ListView, Button } from "std-widgets.slint";
 export component HitManager {
     GroupBox {
         title: "Hit Manager";
@@ -41,7 +41,7 @@ export component HitManager {
                 for info in HitManagerState.hits: VerticalLayout {
                     padding: 0.3rem;
                     Rectangle {
-                        border-radius: 0.5rem;
+                        border-radius: 0.2rem;
                         background: info.timestamp == HitManagerState.selected-hit.timestamp ? skyblue : gray;
                         HorizontalLayout {
                             padding: 0.5rem;
@@ -70,6 +70,41 @@ export component HitManager {
             if HitManagerState.is-hit-selected: GroupBox {
                 vertical-stretch: 0;
                 title: HitManagerState.selected-hit.timestamp;
+
+                private property <int> frame-index: 0;
+                private property <bool> playing: false;
+
+                timer := Timer {
+                    interval: 1s / 20;
+                    running: playing;
+                    triggered => {
+                        frame-index += 1;
+                        if frame-index >= HitManagerState.selected-hit-clip.length {
+                            frame-index = 0;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: start;
+                    Image {
+                        width: 15rem;
+                        source: HitManagerState.selected-hit-clip[frame-index];
+                        image-fit: contain;
+                        HorizontalLayout {
+                            alignment: end;
+                            VerticalLayout {
+                                alignment: end;
+                                Button {
+                                    text: playing ? "stop" : "play";
+                                    clicked => {
+                                        playing = !playing;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             if !HitManagerState.is-hit-selected: Text {
                 text: "Select hit to view";

@@ -96,18 +96,17 @@ fn main() {
                         // Only display if this is for the currently selected hit
                         if selected_timestamp == current_timestamp {
                             let (frames, _fps) = clip;
-                            if !frames.is_empty() {
+                            let v: Vec<_> = frames.into_iter().map(|frame| 
                                 // Display first frame of the clip
-                                let frame = &frames[0];
-                                let buffer =
+                                slint::Image::from_rgb8(
                                     slint::SharedPixelBuffer::<slint::Rgb8Pixel>::clone_from_slice(
                                         frame.as_raw(),
                                         frame.width(),
                                         frame.height(),
-                                    );
-                                let image = slint::Image::from_rgb8(buffer);
-                                ui.set_target_frame(image);
-                            }
+                                    )
+                                )
+                            ).collect();
+                            ui.global::<HitManagerState>().set_selected_hit_clip(v.as_slice().into());
                         }
                     })
                     .ok();
