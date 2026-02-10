@@ -167,7 +167,9 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
                         });
                     }
                     Event::NewStencil(_) => {}
-                    Event::HitProcessorReady => {}
+                    Event::HitProcessorReady => _hit_manager
+                        .send(HitManagerCommand::HitProcessorReady)
+                        .unwrap(),
                     Event::ProcessHit {
                         timestamp,
                         clip,

@@ -41,7 +41,7 @@ pub fn start_hit_manager(
     let (tx, rx) = mpsc::channel();
 
     std::thread::spawn(move || {
-        let mut recognizer_ready = true;
+        let mut processor_ready = false;
         let unprocessed: VecDeque<(DateTime<Local>, HitData)> = {
             let hits = storage
                 .get_all_hits()
@@ -82,7 +82,7 @@ pub fn start_hit_manager(
                         continue;
                     };
 
-                    if recognizer_ready {
+                    if processor_ready {
                         bus_tx
                             .send(Event::ProcessHit {
                                 timestamp,
@@ -95,8 +95,8 @@ pub fn start_hit_manager(
                     }
                 }
                 HitManagerCommand::HitProcessorReady => {
-                    recognizer_ready = true;
-                    while recognizer_ready {
+                    processor_ready = true;
+                    while processor_ready {
                         let (timestamp, data) = match unprocessed_hits.pop_front() {
                             Some(t) => t,
                             None => break,
@@ -116,7 +116,7 @@ pub fn start_hit_manager(
                                 target_info: data.target_info,
                             })
                             .expect("failed to request hit process");
-                        recognizer_ready = false;
+                        processor_ready = false;
                     }
                 }
                 HitManagerCommand::ProcessedHit {
