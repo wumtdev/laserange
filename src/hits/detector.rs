@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use chrono::{DateTime, Local};
 use tracing::info;
 
 use crate::{
@@ -28,6 +29,7 @@ pub fn start_hit_detector(
         let mut clip: Vec<Arc<CapturedFrame>> = Vec::with_capacity(60);
         let mut recording = false;
         let mut recording_target_info = None;
+        let mut last_laser_at = Local::now();
         for msg in rx {
             match msg {
                 HitDetectorCommand::NewFrame(frame) => {
@@ -36,6 +38,7 @@ pub fn start_hit_detector(
                         if !recording {
                             *laser_info.write().unwrap() = Some(LaserInfo { pos: laser_flash });
                             clip = recorder.frames();
+                            clip.retain(|f| f.timestamp > last_laser_at);
                             recording = true;
                             recording_target_info =
                                 Some(target_info.read().unwrap().clone().unwrap());
@@ -56,6 +59,7 @@ pub fn start_hit_detector(
                         // info!("Saved clip in {clip_path}");
                         clip.clear();
                         recording = false;
+                        last_laser_at = Local::now();
                     }
                 }
             }
