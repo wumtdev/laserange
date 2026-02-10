@@ -69,10 +69,10 @@ pub fn save_video(frames: &[RgbImage], fps: u32, output_path: &Path) -> Result<(
 
 use std::io::Read;
 
-use image::ImageBuffer;
-
 pub fn load_video(input_path: &Path) -> Result<(Vec<RgbImage>, u32), Box<dyn Error>> {
-    // 1. Get video dimensions, frame count, and fps using ffprobe
+    // 1. Get Video Metadata (Width, Height, FPS) using ffprobe
+    // We need these to calculate buffer size and return the correct FPS.
+    // Command: ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate -of csv=p=0 input.mp4
     let probe_output = Command::new("ffprobe")
         .args([
             "-v",
@@ -88,63 +88,62 @@ pub fn load_video(input_path: &Path) -> Result<(Vec<RgbImage>, u32), Box<dyn Err
         .output()?;
 
     if !probe_output.status.success() {
-        return Err("ffprobe failed to read video metadata".into());
+        return Err("Failed to probe video file (is ffprobe installed?)".into());
     }
 
-    let probe_str = String::from_utf8(probe_output.stdout)?;
-    let parts: Vec<&str> = probe_str.trim().split(',').collect();
+    let output_str = String::from_utf8(probe_output.stdout)?;
+    let parts: Vec<&str> = output_str.trim().split(',').collect();
 
-    if parts.len() < 3 {
-        return Err("Failed to parse video metadata".into());
+    if parts.len() != 3 {
+        return Err("Failed to parse ffprobe output".into());
     }
 
     let width: u32 = parts[0].parse()?;
     let height: u32 = parts[1].parse()?;
 
-    // Parse fps (format is typically "30/1" or "24000/1001")
+    // FPS often comes as "30/1" or "30000/1001". We parse and round to nearest u32.
     let fps_parts: Vec<&str> = parts[2].split('/').collect();
-    let fps = if fps_parts.len() == 2 {
-        let numerator: f64 = fps_parts[0].parse()?;
-        let denominator: f64 = fps_parts[1].parse()?;
-        (numerator / denominator).round() as u32
-    } else {
-        parts[2].parse()?
-    };
+    let fps_num: f64 = fps_parts[0].parse()?;
+    let fps_den: f64 = fps_parts.get(1).unwrap_or(&"1").parse()?;
+    let fps = (fps_num / fps_den).round() as u32;
 
-    // 2. Launch ffmpeg to decode video to raw RGB24 frames
+    // 2. Launch ffmpeg to decode video to raw RGB24
     let mut child = Command::new("ffmpeg")
         .args([
             "-i",
             input_path.to_str().ok_or("Invalid path")?,
             "-f",
-            "rawvideo", // Output format is raw video
-            "-pixel_format",
-            "rgb24", // Output pixel format matching RgbImage
-            "-",     // Write output to stdout
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-", // Output to stdout
         ])
-        .stdout(Stdio::piped()) // Capture ffmpeg's stdout
-        .stderr(Stdio::null()) // Show errors in console
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null()) // Hide logs
         .spawn()?;
 
-    // 3. Read raw RGB24 data from ffmpeg stdout
     let mut stdout = child.stdout.take().ok_or("Failed to open stdout")?;
-    let mut buffer = Vec::new();
-    stdout.read_to_end(&mut buffer)?;
 
-    // 4. Wait for ffmpeg to finish
-    let status = child.wait()?;
-    if !status.success() {
-        return Err(format!("FFmpeg exited with error code: {}", status).into());
+    // 3. Read frames from stdout
+    let mut frames = Vec::new();
+    // RGB24 means 3 bytes per pixel
+    let frame_size = (width * height * 3) as usize;
+    let mut buffer = vec![0u8; frame_size];
+
+    // Read exact number of bytes for one frame repeatedly until EOF
+    while stdout.read_exact(&mut buffer).is_ok() {
+        // Create RgbImage from the raw buffer
+        if let Some(img) = RgbImage::from_raw(width, height, buffer.clone()) {
+            frames.push(img);
+        }
     }
 
-    // 5. Convert raw bytes into RgbImage frames
-    let frame_size = (width * height * 3) as usize; // 3 bytes per pixel (RGB)
-    let mut frames = Vec::new();
-
-    for chunk in buffer.chunks_exact(frame_size) {
-        let img = ImageBuffer::from_raw(width, height, chunk.to_vec())
-            .ok_or("Failed to create image from raw data")?;
-        frames.push(img);
+    // Wait for ffmpeg to finish cleanly
+    let status = child.wait()?;
+    if !status.success() {
+        // You might choose to ignore this if you successfully read frames,
+        // but it's good practice to check.
+        return Err("ffmpeg process finished with error".into());
     }
 
     Ok((frames, fps))
