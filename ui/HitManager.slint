@@ -94,7 +94,14 @@ export component HitManager {
                         HorizontalLayout {
                             alignment: end;
                             VerticalLayout {
-                                alignment: end;
+                                padding: 0.5rem;
+                                alignment: space-between;
+                                Text {
+                                    horizontal-alignment: right;
+                                    color: green;
+                                    text: frame-index;
+                                }
+
                                 Button {
                                     text: playing ? "stop" : "play";
                                     clicked => {
