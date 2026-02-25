@@ -1,14 +1,17 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc,
+        Arc, RwLock,
         mpsc::{self, Receiver, Sender},
     },
 };
 
 use chrono::{DateTime, Local};
-use image::{Rgb, RgbImage};
-use imageproc::rect::Rect;
+use image::{GrayImage, Rgb, RgbImage, buffer::ConvertBuffer};
+use imageproc::{
+    drawing::draw_hollow_polygon_mut, edges::canny, filter::gaussian_blur_f32, point::Point,
+    rect::Rect,
+};
 
 use crate::{
     capturer::CapturedFrame,
@@ -20,7 +23,7 @@ use crate::{
     },
     recorder::Recorder,
     targets::{TargetInfo, recognizer::start_target_recognizer},
-    vision::project::unwarp_rectangle,
+    vision::{crop::crop_image, project::unwarp_rectangle, stencil::Stencil, zones::ZoneMap},
 };
 
 pub enum Event {
@@ -79,19 +82,24 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
     let (ui_tx, bus_rx) = mpsc::channel();
     std::thread::spawn(move || {
         let (bus_tx, bus_rx) = mpsc::channel::<Event>();
-        // don't change bus_tx and bus_rx, they are shadowing external
-        // bus_tx and bus_rx and it's normal, I want it be so
 
-        let target_info = Arc::new(std::sync::RwLock::new(None));
-        let laser_info = Arc::new(std::sync::RwLock::new(None));
+        let target_settings = crate::targets::settings::load_targets();
+
+        let target_info = Arc::new(RwLock::new(None));
+        let zone_map = Arc::new(RwLock::new(None));
+        let zone_scores: Arc<RwLock<Vec<u32>>> = Arc::new(RwLock::new(Vec::new()));
+        let laser_info = Arc::new(RwLock::new(None));
         let recorder = Arc::new(Recorder::new());
-        let mut _target_stencil = (0f32, 0f32, 1f32, 1f32);
+        let mut target_stencil = Stencil::default();
 
         // Start sub-systems
-        let _capturer = crate::capturer::start_capturer(bus_tx.clone());
-        let last_camera_frame = Arc::new(std::sync::RwLock::new(None));
-        let _target_recognizer =
-            start_target_recognizer(target_info.clone(), last_camera_frame.clone());
+        let capturer = crate::capturer::start_capturer(bus_tx.clone());
+        let last_camera_frame = Arc::new(RwLock::new(None));
+        let target_recognizer = start_target_recognizer(
+            target_info.clone(),
+            zone_map.clone(),
+            last_camera_frame.clone(),
+        );
         let hit_detector = start_hit_detector(
             bus_tx.clone(),
             laser_info.clone(),
@@ -99,75 +107,122 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
             recorder.clone(),
         );
 
-        let _hit_manager = crate::hits::manager::start_hit_manager(
+        let hit_manager = crate::hits::manager::start_hit_manager(
             bus_tx.clone(),
             Box::new(crate::hits::storage::FileHitStorage::new("data/hits")),
         );
 
-        let _hit_processor = crate::hits::processor::start_hit_processor(bus_tx.clone());
+        let hit_processor = crate::hits::processor::start_hit_processor(bus_tx.clone());
 
         loop {
             for event in bus_rx.try_iter() {
                 match event {
                     Event::NewFrame(captured_frame) => {
-                        let mut ui_camera_frame = captured_frame.image.clone();
+                        let mut camera_frame = captured_frame.image.clone();
 
-                        *last_camera_frame.write().unwrap() = Some(captured_frame.clone());
-
-                        let mut ui_target_frame = None;
+                        let mut target_frame = target_stencil.crop(&camera_frame).to_image();
+                        *last_camera_frame.write().unwrap() = Some(Arc::new(CapturedFrame {
+                            image: target_frame.clone(),
+                            timestamp: captured_frame.timestamp,
+                        }));
 
                         if let Some(target_info) = &*target_info.read().unwrap() {
-                            if let Some(mut frame) =
-                                unwarp_rectangle(&captured_frame.image, &target_info.rect, 600, 800)
+                            if let Some(frame) =
+                                unwarp_rectangle(&target_frame, &target_info.rect, 600, 800)
                             {
-                                let captured_frame = Arc::new(CapturedFrame {
-                                    image: frame.clone(),
-                                    timestamp: captured_frame.timestamp,
-                                });
-                                recorder.push_frame(captured_frame.clone());
-                                hit_detector
-                                    .send(HitDetectorCommand::NewFrame(captured_frame))
-                                    .ok();
-                                if let Some(laser_info) = &*laser_info.read().unwrap() {
-                                    imageproc::drawing::draw_cross_mut(
-                                        &mut frame,
-                                        Rgb([255, 0, 0]),
-                                        laser_info.pos.x as i32,
-                                        laser_info.pos.y as i32,
-                                    );
-                                    imageproc::drawing::draw_hollow_rect_mut(
-                                        &mut frame,
-                                        Rect::at(
-                                            laser_info.pos.x as i32 - 10,
-                                            laser_info.pos.y as i32 - 10,
-                                        )
-                                        .of_size(20, 20),
-                                        Rgb([255, 0, 0]),
-                                    );
-                                }
-                                ui_target_frame = Some(frame);
+                                target_frame = frame;
                             }
-                            imageproc::drawing::draw_hollow_polygon_mut(
-                                &mut ui_camera_frame,
-                                target_info
-                                    .rect
-                                    .iter()
-                                    .map(Into::into)
-                                    .collect::<Vec<_>>()
-                                    .as_slice(),
-                                Rgb([0, 255, 0]),
-                            );
+                            let r =
+                                target_stencil.rect(camera_frame.width(), camera_frame.height());
+                            let a: Vec<Point<f32>> = target_info
+                                .rect
+                                .iter()
+                                .map(|p| Point::new(r.x as f32 + p.x, r.y as f32 + p.y))
+                                .collect();
+                            draw_hollow_polygon_mut(&mut camera_frame, &a, Rgb([0, 255, 0]));
                         }
 
-                        // Send frame data back to UI
-                        let target_frame_arc = ui_target_frame.map(|f| Arc::new(f));
-                        let _ = ui_tx.send(AppMessage::FrameReady {
-                            camera_frame: Arc::new(ui_camera_frame),
-                            target_frame: target_frame_arc,
+                        // *zone_map.write().unwrap() =
+                        //     Some(ZoneMap::recognize(&target_frame.convert()));
+
+                        let captured_target_frame = Arc::new(CapturedFrame {
+                            image: target_frame.clone(),
+                            timestamp: captured_frame.timestamp,
                         });
+                        recorder.push_frame(captured_target_frame.clone());
+                        // hit_detector
+                        //     .send(HitDetectorCommand::NewFrame(captured_target_frame.clone()))
+                        //     .unwrap();
+
+                        // if let Some(target_info) = &*target_info.read().unwrap() {
+                        //     if let Some(mut frame) =
+                        //         unwarp_rectangle(&captured_frame.image, &target_info.rect, 600, 800)
+                        //     {
+                        //         let captured_frame = Arc::new(CapturedFrame {
+                        //             image: frame.clone(),
+                        //             timestamp: captured_frame.timestamp,
+                        //         });
+                        //         recorder.push_frame(captured_frame.clone());
+                        //         hit_detector
+                        //             .send(HitDetectorCommand::NewFrame(captured_frame))
+                        //             .unwrap();
+                        //         if let Some(laser_info) = &*laser_info.read().unwrap() {
+                        //             imageproc::drawing::draw_cross_mut(
+                        //                 &mut frame,
+                        //                 Rgb([255, 0, 0]),
+                        //                 laser_info.pos.x as i32,
+                        //                 laser_info.pos.y as i32,
+                        //             );
+                        //             imageproc::drawing::draw_hollow_rect_mut(
+                        //                 &mut frame,
+                        //                 Rect::at(
+                        //                     laser_info.pos.x as i32 - 10,
+                        //                     laser_info.pos.y as i32 - 10,
+                        //                 )
+                        //                 .of_size(20, 20),
+                        //                 Rgb([255, 0, 0]),
+                        //             );
+                        //         }
+                        //         ui_target_frame = Some(frame);
+                        //     }
+                        //     imageproc::drawing::draw_hollow_polygon_mut(
+                        //         &mut ui_camera_frame,
+                        //         target_info
+                        //             .rect
+                        //             .iter()
+                        //             .map(Into::into)
+                        //             .collect::<Vec<_>>()
+                        //             .as_slice(),
+                        //         Rgb([0, 255, 0]),
+                        //     );
+                        // }
+
+                        // Send frame data back to UI
+
+                        let mut target_frame_arc = Some(
+                            {
+                                let img: GrayImage = target_frame.convert();
+                                let img = gaussian_blur_f32(&img, 1.5).convert();
+                                // canny(&img, 10.0, 10.0).convert()
+                                img
+                            }
+                            .clone(),
+                        )
+                        .map(|f| Arc::new(f));
+
+                        // if let Some(zone_map) = &*zone_map.read().unwrap() {
+                        //     target_frame_arc = Some(Arc::new(zone_map.map().convert()));
+                        // }
+
+                        ui_tx
+                            .send(AppMessage::FrameReady {
+                                camera_frame: Arc::new(camera_frame),
+                                target_frame: target_frame_arc,
+                            })
+                            .unwrap();
                     }
                     Event::NewStencil(_) => {}
-                    Event::HitProcessorReady => _hit_manager
+                    Event::HitProcessorReady => hit_manager
                         .send(HitManagerCommand::HitProcessorReady)
                         .unwrap(),
                     Event::ProcessHit {
@@ -175,7 +230,7 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
                         clip,
                         target_info,
                     } => {
-                        _hit_processor
+                        hit_processor
                             .send(HitProcessorCommand::ProcessHit {
                                 timestamp,
                                 clip,
@@ -188,7 +243,7 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
                         clip,
                         target_info,
                     } => {
-                        _hit_manager
+                        hit_manager
                             .send(HitManagerCommand::NewHit {
                                 timestamp,
                                 clip: clip.clone(),
@@ -206,7 +261,7 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
                     Event::ProcessedHit {
                         timestamp,
                         processed,
-                    } => _hit_manager
+                    } => hit_manager
                         .send(HitManagerCommand::ProcessedHit {
                             timestamp,
                             processed,
@@ -220,18 +275,21 @@ pub fn start() -> (Sender<AppCommand>, Receiver<AppMessage>) {
                         .unwrap(),
                 }
             }
+
             for cmd in ui_rx.try_iter() {
                 match cmd {
                     AppCommand::NewStencil(stencil) => {
-                        _target_stencil = stencil;
-                        let _ = bus_tx.send(Event::NewStencil(stencil));
+                        target_stencil = stencil.into();
+                        *target_info.write().unwrap() = None;
+                        bus_tx.send(Event::NewStencil(stencil)).unwrap();
                     }
-                    AppCommand::RequestHitClip { timestamp } => _hit_manager
+                    AppCommand::RequestHitClip { timestamp } => hit_manager
                         .send(HitManagerCommand::RequestHitClip { timestamp })
                         .unwrap(),
                 }
             }
-            std::thread::yield_now()
+
+            std::thread::yield_now();
         }
     });
     (bus_tx, bus_rx)

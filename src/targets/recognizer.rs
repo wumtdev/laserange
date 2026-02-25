@@ -11,18 +11,23 @@ use image::buffer::ConvertBuffer;
 use imageproc::edges::canny;
 use tracing::info;
 
-use crate::{capturer::CapturedFrame, targets::TargetInfo, vision::frame::find_rectangle_vertices};
+use crate::{
+    capturer::CapturedFrame,
+    targets::TargetInfo,
+    vision::{frame::find_rectangle_vertices, zones::ZoneMap},
+};
 
 pub enum TargetRecognizerCommand {}
 
 pub fn start_target_recognizer(
     target_info_share: Arc<RwLock<Option<TargetInfo>>>,
+    zone_map: Arc<RwLock<Option<ZoneMap>>>,
     last_camera_frame: Arc<RwLock<Option<Arc<CapturedFrame>>>>,
 ) -> Sender<TargetRecognizerCommand> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut last_recognition_at = Instant::now();
-        let recognition_interval = Duration::from_secs(1);
+        let recognition_interval = Duration::from_secs(5);
         let mut processed_frame: Option<Arc<CapturedFrame>> = None;
         loop {
             while last_recognition_at.elapsed() < recognition_interval {
@@ -51,10 +56,10 @@ pub fn start_target_recognizer(
             let contours = imageproc::contours::find_contours::<u32>(&edges);
 
             if let Some(rect) = find_rectangle_vertices(&contours) {
-                *target_info_share
-                    .write()
-                    .expect("failed to lock target info share") = Some(TargetInfo { rect });
+                *target_info_share.write().unwrap() = Some(TargetInfo { rect });
             }
+
+            // *zone_map.write().unwrap() = Some(ZoneMap::recognize(&gray));
 
             last_recognition_at = Instant::now();
         }

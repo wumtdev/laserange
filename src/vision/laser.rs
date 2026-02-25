@@ -15,7 +15,7 @@ pub fn find_red_laser(img: &RgbImage) -> Option<Point<f32>> {
             let b = pixel[2] as f32;
 
             // Detect bright red pixels (laser point is very bright)
-            if r > 245.0 {
+            if r > 250.0 {
                 sum_x += x as f32;
                 sum_y += y as f32;
                 count += 1;

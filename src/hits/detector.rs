@@ -7,11 +7,12 @@ use std::{
 };
 
 use chrono::{DateTime, Local};
+use imageproc::point::Point;
 use tracing::info;
 
 use crate::{
     bus::Event, capturer::CapturedFrame, coding::ffmpeg::save_video, hits::LaserInfo,
-    recorder::Recorder, targets::TargetInfo, vision::laser::find_red_laser,
+    recorder::Recorder, targets::TargetInfo, util::point::MyPoint, vision::laser::find_red_laser,
 };
 
 pub enum HitDetectorCommand {
@@ -40,8 +41,7 @@ pub fn start_hit_detector(
                             clip = recorder.frames();
                             clip.retain(|f| f.timestamp > last_laser_at);
                             recording = true;
-                            recording_target_info =
-                                Some(target_info.read().unwrap().clone().unwrap());
+                            recording_target_info = target_info.read().unwrap().clone();
                         } else {
                             clip.push(frame);
                         }
@@ -53,7 +53,14 @@ pub fn start_hit_detector(
                         bus.send(Event::NewHit {
                             timestamp: frame.timestamp.into(),
                             clip: (v, 20),
-                            target_info: recording_target_info.take().unwrap(),
+                            target_info: recording_target_info.take().unwrap_or(TargetInfo {
+                                rect: [
+                                    Point::new(0.0, 0.0).into(),
+                                    Point::new(0.0, 0.0).into(),
+                                    Point::new(0.0, 0.0).into(),
+                                    Point::new(0.0, 0.0).into(),
+                                ],
+                            }),
                         })
                         .expect("Failed to send hit event");
                         // info!("Saved clip in {clip_path}");
